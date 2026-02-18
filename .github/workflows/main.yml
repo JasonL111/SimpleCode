@@ -15,25 +15,32 @@ jobs:
       image: rockylinux:8
 
     steps:
-      - name: Install build deps (enable PowerTools + native build toolchain)
+      - name: Install build deps (robust for Rocky 8 repos)
         run: |
           set -euxo pipefail
           dnf -y update
           dnf -y install dnf-plugins-core
-          # Rocky 8: libxkbfile-devel lives in PowerTools
-          dnf config-manager --set-enabled powertools || true
 
+          # Try to enable PowerTools if present (some minimal images don't ship it enabled/available)
+          dnf repolist all || true
+          (dnf config-manager --set-enabled powertools && echo "Enabled powertools") || true
+          (dnf config-manager --set-enabled PowerTools && echo "Enabled PowerTools") || true
+
+          # Core build deps (no libxkbfile-devel here to avoid hard-fail)
           dnf -y install \
             git tar gzip xz bzip2 findutils which \
             python3 make gcc gcc-c++ pkgconfig \
             rpm-build \
-            libX11-devel libxkbfile-devel libsecret-devel krb5-devel \
+            libX11-devel libsecret-devel krb5-devel \
             libXcomposite-devel libXdamage-devel libXext-devel libXfixes-devel \
             libXi-devel libXrandr-devel libXtst-devel \
             alsa-lib-devel atk-devel cairo-devel cups-devel dbus-devel \
             expat-devel fontconfig-devel freetype-devel \
             glib2-devel gtk3-devel mesa-libgbm-devel nss-devel pango-devel \
             libdrm-devel
+
+          # Optional: libxkbfile-devel (only installs if repo provides it)
+          dnf -y install libxkbfile-devel || true
 
       - name: Checkout sources at ref
         uses: actions/checkout@v4
@@ -64,7 +71,7 @@ jobs:
       - name: Locate RPM outputs
         run: |
           set -euxo pipefail
-          find . -maxdepth 6 -type f -name "*.rpm" -print || true
+          find . -maxdepth 8 -type f -name "*.rpm" -print || true
           ls -lah .build/linux/rpm || true
 
       - name: Upload RPM artifact
