@@ -15,15 +15,27 @@ jobs:
       image: rockylinux:8
 
     steps:
-      - name: Install build deps (RPM + native modules)
+      - name: Install build deps (enable PowerTools + native build toolchain)
         run: |
+          set -euxo pipefail
           dnf -y update
-          dnf -y install git tar gzip xz bzip2 findutils which \
-                        python3 make gcc gcc-c++ pkgconfig \
-                        rpm-build \
-                        libX11-devel libxkbfile-devel libsecret-devel krb5-devel
+          dnf -y install dnf-plugins-core
+          # Rocky 8: libxkbfile-devel lives in PowerTools
+          dnf config-manager --set-enabled powertools || true
 
-      - name: Checkout VS Code sources at ref
+          dnf -y install \
+            git tar gzip xz bzip2 findutils which \
+            python3 make gcc gcc-c++ pkgconfig \
+            rpm-build \
+            libX11-devel libxkbfile-devel libsecret-devel krb5-devel \
+            libXcomposite-devel libXdamage-devel libXext-devel libXfixes-devel \
+            libXi-devel libXrandr-devel libXtst-devel \
+            alsa-lib-devel atk-devel cairo-devel cups-devel dbus-devel \
+            expat-devel fontconfig-devel freetype-devel \
+            glib2-devel gtk3-devel mesa-libgbm-devel nss-devel pango-devel \
+            libdrm-devel
+
+      - name: Checkout sources at ref
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
@@ -36,20 +48,24 @@ jobs:
           cache: npm
 
       - name: Install JS deps
-        run: npm ci
+        run: |
+          set -euxo pipefail
+          npm ci
 
       - name: Build (linux x64) + Prepare RPM + Build RPM
         env:
           npm_config_loglevel: warn
         run: |
+          set -euxo pipefail
           npm run gulp vscode-linux-x64
           npm run gulp vscode-linux-x64-prepare-rpm
           npm run gulp vscode-linux-x64-build-rpm
 
-      - name: Show RPM outputs
+      - name: Locate RPM outputs
         run: |
+          set -euxo pipefail
+          find . -maxdepth 6 -type f -name "*.rpm" -print || true
           ls -lah .build/linux/rpm || true
-          find .build/linux/rpm -name "*.rpm" -maxdepth 5 -print -exec ls -lah {} \; || true
 
       - name: Upload RPM artifact
         uses: actions/upload-artifact@v4
@@ -57,3 +73,4 @@ jobs:
           name: vscode-rpm-${{ inputs.ref }}
           path: |
             .build/linux/rpm/**/*.rpm
+            **/*.rpm
