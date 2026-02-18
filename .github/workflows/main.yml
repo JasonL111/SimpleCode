@@ -1,0 +1,59 @@
+name: build-rpm
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "git ref (tag/branch/sha). e.g. 1.109.2"
+        required: true
+        default: "1.109.2"
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:8
+
+    steps:
+      - name: Install build deps (RPM + native modules)
+        run: |
+          dnf -y update
+          dnf -y install git tar gzip xz bzip2 findutils which \
+                        python3 make gcc gcc-c++ pkgconfig \
+                        rpm-build \
+                        libX11-devel libxkbfile-devel libsecret-devel krb5-devel
+
+      - name: Checkout VS Code sources at ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node from .nvmrc
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build (linux x64) + Prepare RPM + Build RPM
+        env:
+          npm_config_loglevel: warn
+        run: |
+          npm run gulp vscode-linux-x64
+          npm run gulp vscode-linux-x64-prepare-rpm
+          npm run gulp vscode-linux-x64-build-rpm
+
+      - name: Show RPM outputs
+        run: |
+          ls -lah .build/linux/rpm || true
+          find .build/linux/rpm -name "*.rpm" -maxdepth 5 -print -exec ls -lah {} \; || true
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-rpm-${{ inputs.ref }}
+          path: |
+            .build/linux/rpm/**/*.rpm
